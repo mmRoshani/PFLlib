@@ -60,6 +60,10 @@ class FedAvg(Server):
                 self.call_dlg(i)
             self.aggregate_parameters()
 
+            if self.clustering_gap != -1:
+                print(f"\nClustering is enabled")
+
+
             self.Budget.append(time.time() - s_t)
             print('-'*25, 'time cost', '-'*25, self.Budget[-1])
 

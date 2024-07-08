@@ -66,6 +66,7 @@ class Server(object):
 
         self.times = times
         self.eval_gap = args.eval_gap
+        self.clustering_gap = args.clustering_gap
         self.client_drop_rate = args.client_drop_rate
         self.train_slow_rate = args.train_slow_rate
         self.send_slow_rate = args.send_slow_rate

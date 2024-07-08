@@ -413,6 +413,8 @@ if __name__ == "__main__":
                         help="Running times")
     parser.add_argument('-eg', "--eval_gap", type=int, default=1,
                         help="Rounds gap for evaluation")
+    parser.add_argument('-cg', "--clustering_gap", type=int, default=-1,
+                    help="Rounds gap for clustering (-1 disables clustering on server side)")
     parser.add_argument('-sfn', "--save_folder_name", type=str, default='items')
     parser.add_argument('-ab', "--auto_break", type=bool, default=False)
     parser.add_argument('-dlg', "--dlg_eval", type=bool, default=False)
