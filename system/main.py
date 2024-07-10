@@ -15,7 +15,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-#!/usr/bin/env python
+# !/usr/bin/env python
 import copy
 import torch
 import argparse
@@ -81,12 +81,12 @@ warnings.simplefilter("ignore")
 torch.manual_seed(0)
 
 # hyper-params for Text tasks
-vocab_size = 98635   #98635 for AG_News and 399198 for Sogou_News
-max_len=200
-emb_dim=32
+vocab_size = 98635  # 98635 for AG_News and 399198 for Sogou_News
+max_len = 200
+emb_dim = 32
+
 
 def run(args):
-
     time_list = []
     reporter = MemReporter()
     model_str = args.model
@@ -97,15 +97,15 @@ def run(args):
         start = time.time()
 
         # Generate args.model
-        if model_str == "mlr": # convex
+        if model_str == "mlr":  # convex
             if "MNIST" in args.dataset:
-                args.model = Mclr_Logistic(1*28*28, num_classes=args.num_classes).to(args.device)
+                args.model = Mclr_Logistic(1 * 28 * 28, num_classes=args.num_classes).to(args.device)
             elif "Cifar10" in args.dataset:
-                args.model = Mclr_Logistic(3*32*32, num_classes=args.num_classes).to(args.device)
+                args.model = Mclr_Logistic(3 * 32 * 32, num_classes=args.num_classes).to(args.device)
             else:
                 args.model = Mclr_Logistic(60, num_classes=args.num_classes).to(args.device)
 
-        elif model_str == "cnn": # non-convex
+        elif model_str == "cnn":  # non-convex
             if "MNIST" in args.dataset:
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=1024).to(args.device)
             elif "Cifar10" in args.dataset:
@@ -118,80 +118,82 @@ def run(args):
             else:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=10816).to(args.device)
 
-        elif model_str == "dnn": # non-convex
+        elif model_str == "dnn":  # non-convex
             if "MNIST" in args.dataset:
-                args.model = DNN(1*28*28, 100, num_classes=args.num_classes).to(args.device)
+                args.model = DNN(1 * 28 * 28, 100, num_classes=args.num_classes).to(args.device)
             elif "Cifar10" in args.dataset:
-                args.model = DNN(3*32*32, 100, num_classes=args.num_classes).to(args.device)
+                args.model = DNN(3 * 32 * 32, 100, num_classes=args.num_classes).to(args.device)
             else:
                 args.model = DNN(60, 20, num_classes=args.num_classes).to(args.device)
-        
+
         elif model_str == "resnet":
             args.model = torchvision.models.resnet18(pretrained=False, num_classes=args.num_classes).to(args.device)
-            
+
             # args.model = torchvision.models.resnet18(pretrained=True).to(args.device)
             # feature_dim = list(args.model.fc.parameters())[0].shape[1]
             # args.model.fc = nn.Linear(feature_dim, args.num_classes).to(args.device)
-            
+
             # args.model = resnet18(num_classes=args.num_classes, has_bn=True, bn_block_num=4).to(args.device)
-        
+
         elif model_str == "resnet10":
             args.model = resnet10(num_classes=args.num_classes).to(args.device)
-        
+
         elif model_str == "resnet34":
             args.model = torchvision.models.resnet34(pretrained=False, num_classes=args.num_classes).to(args.device)
 
         elif model_str == "alexnet":
             args.model = alexnet(pretrained=False, num_classes=args.num_classes).to(args.device)
-            
+
             # args.model = alexnet(pretrained=True).to(args.device)
             # feature_dim = list(args.model.fc.parameters())[0].shape[1]
             # args.model.fc = nn.Linear(feature_dim, args.num_classes).to(args.device)
-            
+
         elif model_str == "googlenet":
-            args.model = torchvision.models.googlenet(pretrained=False, aux_logits=False, 
+            args.model = torchvision.models.googlenet(pretrained=False, aux_logits=False,
                                                       num_classes=args.num_classes).to(args.device)
-            
+
             # args.model = torchvision.models.googlenet(pretrained=True, aux_logits=False).to(args.device)
             # feature_dim = list(args.model.fc.parameters())[0].shape[1]
             # args.model.fc = nn.Linear(feature_dim, args.num_classes).to(args.device)
 
         elif model_str == "mobilenet_v2":
             args.model = mobilenet_v2(pretrained=False, num_classes=args.num_classes).to(args.device)
-            
+
             # args.model = mobilenet_v2(pretrained=True).to(args.device)
             # feature_dim = list(args.model.fc.parameters())[0].shape[1]
             # args.model.fc = nn.Linear(feature_dim, args.num_classes).to(args.device)
-            
+
         elif model_str == "lstm":
-            args.model = LSTMNet(hidden_dim=emb_dim, vocab_size=vocab_size, num_classes=args.num_classes).to(args.device)
+            args.model = LSTMNet(hidden_dim=emb_dim, vocab_size=vocab_size, num_classes=args.num_classes).to(
+                args.device)
 
         elif model_str == "bilstm":
-            args.model = BiLSTM_TextClassification(input_size=vocab_size, hidden_size=emb_dim, 
-                                                   output_size=args.num_classes, num_layers=1, 
-                                                   embedding_dropout=0, lstm_dropout=0, attention_dropout=0, 
+            args.model = BiLSTM_TextClassification(input_size=vocab_size, hidden_size=emb_dim,
+                                                   output_size=args.num_classes, num_layers=1,
+                                                   embedding_dropout=0, lstm_dropout=0, attention_dropout=0,
                                                    embedding_length=emb_dim).to(args.device)
 
         elif model_str == "fastText":
-            args.model = fastText(hidden_dim=emb_dim, vocab_size=vocab_size, num_classes=args.num_classes).to(args.device)
+            args.model = fastText(hidden_dim=emb_dim, vocab_size=vocab_size, num_classes=args.num_classes).to(
+                args.device)
 
         elif model_str == "TextCNN":
-            args.model = TextCNN(hidden_dim=emb_dim, max_len=max_len, vocab_size=vocab_size, 
+            args.model = TextCNN(hidden_dim=emb_dim, max_len=max_len, vocab_size=vocab_size,
                                  num_classes=args.num_classes).to(args.device)
 
         elif model_str == "Transformer":
-            args.model = TransformerModel(ntoken=vocab_size, d_model=emb_dim, nhead=8, nlayers=2, 
+            args.model = TransformerModel(ntoken=vocab_size, d_model=emb_dim, nhead=8, nlayers=2,
                                           num_classes=args.num_classes, max_len=max_len).to(args.device)
-        
+
         elif model_str == "AmazonMLP":
             args.model = AmazonMLP().to(args.device)
 
         elif model_str == "harcnn":
             if args.dataset == 'HAR':
-                args.model = HARCNN(9, dim_hidden=1664, num_classes=args.num_classes, conv_kernel_size=(1, 9), 
+                args.model = HARCNN(9, dim_hidden=1664, num_classes=args.num_classes, conv_kernel_size=(1, 9),
                                     pool_kernel_size=(1, 2)).to(args.device)
             elif args.dataset == 'PAMAP2':
-                args.model = HARCNN(9, dim_hidden=3712, num_classes=args.num_classes, conv_kernel_size=(1, 9), 
+                args.model = HARCNN(9, dim_hidden=3712, num_classes=args.num_classes, conv_kernel_size=(1, 9),
                                     pool_kernel_size=(1, 2)).to(args.device)
 
         else:
@@ -360,16 +362,15 @@ def run(args):
         elif args.algorithm == 'FedCAC':
             server = FedCAC(args, i)
 
-            
+
         else:
             raise NotImplementedError
 
         server.train()
 
-        time_list.append(time.time()-start)
+        time_list.append(time.time() - start)
 
     print(f"\nAverage time cost: {round(np.average(time_list), 2)}s.")
-    
 
     # Global average
     average_data(dataset=args.dataset, algorithm=args.algorithm, goal=args.goal, times=args.times)
@@ -384,11 +385,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     # general
-    parser.add_argument('-go', "--goal", type=str, default="test", 
+    parser.add_argument('-go', "--goal", type=str, default="test",
                         help="The goal for this experiment")
     parser.add_argument('-dev', "--device", type=str, default="cuda",
                         choices=["cpu", "cuda"])
     parser.add_argument('-did', "--device_id", type=str, default="0")
+    parser.add_argument('-par', "--parallel_train", type=bool, default=False, help="Train clients in parallel")
     parser.add_argument('-data', "--dataset", type=str, default="MNIST")
     parser.add_argument('-nb', "--num_classes", type=int, default=10)
     parser.add_argument('-m', "--model", type=str, default="cnn")
@@ -398,7 +400,7 @@ if __name__ == "__main__":
     parser.add_argument('-ld', "--learning_rate_decay", type=bool, default=False)
     parser.add_argument('-ldg', "--learning_rate_decay_gamma", type=float, default=0.99)
     parser.add_argument('-gr', "--global_rounds", type=int, default=2000)
-    parser.add_argument('-ls', "--local_epochs", type=int, default=1, 
+    parser.add_argument('-ls', "--local_epochs", type=int, default=1,
                         help="Multiple update steps in one local epoch.")
     parser.add_argument('-algo', "--algorithm", type=str, default="FedAvg")
     parser.add_argument('-jr', "--join_ratio", type=float, default=1.0,
@@ -413,8 +415,10 @@ if __name__ == "__main__":
                         help="Running times")
     parser.add_argument('-eg', "--eval_gap", type=int, default=1,
                         help="Rounds gap for evaluation")
-    parser.add_argument('-cg', "--clustering_gap", type=int, default=-1,
-                    help="Rounds gap for clustering (-1 disables clustering on server side)")
+    parser.add_argument('-cg', "--clustering_gap", type=int, default=5,
+                        help="Rounds gap for clustering")
+    parser.add_argument('-cc', "--cluster_count", type=int, default=0,
+                        help="Clusters count (0 means the clustering will no execute)")
     parser.add_argument('-sfn', "--save_folder_name", type=str, default='items')
     parser.add_argument('-ab', "--auto_break", type=bool, default=False)
     parser.add_argument('-dlg', "--dlg_eval", type=bool, default=False)
@@ -449,7 +453,7 @@ if __name__ == "__main__":
     parser.add_argument('-itk', "--itk", type=int, default=4000,
                         help="The iterations for solving quadratic subproblems")
     # FedAMP
-    parser.add_argument('-alk', "--alphaK", type=float, default=1.0, 
+    parser.add_argument('-alk', "--alphaK", type=float, default=1.0,
                         help="lambda/sqrt(GLOABL-ITRATION) according to the paper")
     parser.add_argument('-sg', "--sigma", type=float, default=1.0)
     # APFL
@@ -483,7 +487,6 @@ if __name__ == "__main__":
     # FedAvgDBE
     parser.add_argument('-mo', "--momentum", type=float, default=0.1)
     parser.add_argument('-klw', "--kl_weight", type=float, default=0.0)
-
 
     args = parser.parse_args()
 
@@ -536,6 +539,5 @@ if __name__ == "__main__":
     # with torch.autograd.profiler.profile(profile_memory=True) as prof:
     run(args)
 
-    
     # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=20))
     # print(f"\nTotal time cost: {round(time.time()-total_start, 2)}s.")

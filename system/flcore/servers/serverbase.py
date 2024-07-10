@@ -37,7 +37,6 @@ class Server(object):
         self.local_epochs = args.local_epochs
         self.batch_size = args.batch_size
         self.learning_rate = args.local_learning_rate
-        self.global_model = copy.deepcopy(args.model)
         self.num_clients = args.num_clients
         self.join_ratio = args.join_ratio
         self.random_join_ratio = args.random_join_ratio
@@ -50,11 +49,7 @@ class Server(object):
         self.save_folder_name = args.save_folder_name
         self.top_cnt = 100
         self.auto_break = args.auto_break
-
-        self.clients = []
-        self.selected_clients = []
-        self.train_slow_clients = []
-        self.send_slow_clients = []
+        self.parallel_train = args.parallel_train
 
         self.uploaded_weights = []
         self.uploaded_ids = []
@@ -67,6 +62,7 @@ class Server(object):
         self.times = times
         self.eval_gap = args.eval_gap
         self.clustering_gap = args.clustering_gap
+        self.cluster_count = args.cluster_count
         self.client_drop_rate = args.client_drop_rate
         self.train_slow_rate = args.train_slow_rate
         self.send_slow_rate = args.send_slow_rate
@@ -76,21 +72,59 @@ class Server(object):
         self.batch_num_per_client = args.batch_num_per_client
 
         self.num_new_clients = args.num_new_clients
-        self.new_clients = []
+
         self.eval_new_clients = False
         self.fine_tuning_epoch_new = args.fine_tuning_epoch_new
+
+        if self.cluster_count == 0:
+            self.global_model = copy.deepcopy(args.model)
+            self.clients = []
+            self.new_clients = []
+            self.selected_clients = []
+            self.train_slow_clients = []
+            self.send_slow_clients = []
+        else:
+            self.global_model = []
+
+            self.clients = []
+            self.new_clients = []
+            self.selected_clients = []
+            self.train_slow_clients = []
+            self.send_slow_clients = []
+
+            self.clusters_group_ids = []
+            # TODO: future, new clients joins the learning system self.new_clients = [[], [], []]
+            for _ in range(self.cluster_count):
+                self.global_model.append(copy.deepcopy(args.model))
+
+                self.clients.append([])
+                self.new_clients.append([])
+                self.selected_clients.append([])
+                self.train_slow_clients.append([])
+                self.send_slow_clients.append([])
+
+                self.client_ids_in_cluster.append([])
 
     def set_clients(self, clientObj):
         for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
             train_data = read_client_data(self.dataset, i, is_train=True)
             test_data = read_client_data(self.dataset, i, is_train=False)
-            client = clientObj(self.args, 
-                            id=i, 
-                            train_samples=len(train_data), 
-                            test_samples=len(test_data), 
-                            train_slow=train_slow, 
-                            send_slow=send_slow)
-            self.clients.append(client)
+            client = clientObj(self.args,
+                               id=i,
+                               train_samples=len(train_data),
+                               test_samples=len(test_data),
+                               train_slow=train_slow,
+                               send_slow=send_slow)
+
+            if self.cluster_count == 0:
+                self.clients[cluster_id].append(client)
+            else:
+                # push clients to respective cluster groups
+                for cluster_id in self.cluster_count:
+                    if client.cluster_id == cluster_id:
+                        self.clients[cluster_id].append(client)
+                        # keep track of indexes
+                        self.client_ids_in_cluster[cluster_id].append(client.id)
 
     # random select slow clients
     def select_slow_clients(self, slow_rate):
@@ -110,7 +144,8 @@ class Server(object):
 
     def select_clients(self):
         if self.random_join_ratio:
-            self.current_num_join_clients = np.random.choice(range(self.num_join_clients, self.num_clients+1), 1, replace=False)[0]
+            self.current_num_join_clients = \
+                np.random.choice(range(self.num_join_clients, self.num_clients + 1), 1, replace=False)[0]
         else:
             self.current_num_join_clients = self.num_join_clients
         selected_clients = list(np.random.choice(self.clients, self.current_num_join_clients, replace=False))
@@ -120,19 +155,29 @@ class Server(object):
     def send_models(self):
         assert (len(self.clients) > 0)
 
-        for client in self.clients:
-            start_time = time.time()
-            
-            client.set_parameters(self.global_model)
+        if self.cluster_count == 0:
+            for client in self.clients:
+                start_time = time.time()
 
-            client.send_time_cost['num_rounds'] += 1
-            client.send_time_cost['total_cost'] += 2 * (time.time() - start_time)
+                client.set_parameters(self.global_model)
+
+                client.send_time_cost['num_rounds'] += 1
+                client.send_time_cost['total_cost'] += 2 * (time.time() - start_time)
+        else:
+            for cluster_index, cluster_group_ids in enumerate(self.clusters_group_ids):
+                for client_id in cluster_group_ids:
+                    start_time = time.time()
+
+                    self.clients[client_id].set_parameters(self.global_model[cluster_index])
+
+                    self.clients[client_id].send_time_cost['num_rounds'] += 1
+                    self.clients[client_id].send_time_cost['total_cost'] += 2 * (time.time() - start_time)
 
     def receive_models(self):
         assert (len(self.selected_clients) > 0)
 
         active_clients = random.sample(
-            self.selected_clients, int((1-self.client_drop_rate) * self.current_num_join_clients))
+            self.selected_clients, int((1 - self.client_drop_rate) * self.current_num_join_clients))
 
         self.uploaded_ids = []
         self.uploaded_weights = []
@@ -141,26 +186,40 @@ class Server(object):
         for client in active_clients:
             try:
                 client_time_cost = client.train_time_cost['total_cost'] / client.train_time_cost['num_rounds'] + \
-                        client.send_time_cost['total_cost'] / client.send_time_cost['num_rounds']
+                                   client.send_time_cost['total_cost'] / client.send_time_cost['num_rounds']
             except ZeroDivisionError:
                 client_time_cost = 0
             if client_time_cost <= self.time_threthold:
                 tot_samples += client.train_samples
                 self.uploaded_ids.append(client.id)
+                # TODO: 2- disributed base on cluster
                 self.uploaded_weights.append(client.train_samples)
                 self.uploaded_models.append(client.model)
+
         for i, w in enumerate(self.uploaded_weights):
             self.uploaded_weights[i] = w / tot_samples
 
     def aggregate_parameters(self):
         assert (len(self.uploaded_models) > 0)
 
-        self.global_model = copy.deepcopy(self.uploaded_models[0])
-        for param in self.global_model.parameters():
-            param.data.zero_()
-            
-        for w, client_model in zip(self.uploaded_weights, self.uploaded_models):
-            self.add_parameters(w, client_model)
+        if self.cluster_count == 0:
+            self.global_model = copy.deepcopy(self.uploaded_models[0])
+
+            for param in self.global_model.parameters():
+                param.data.zero_()
+            for w, client_model in zip(self.uploaded_weights, self.uploaded_models):
+                self.add_parameters(w, client_model)
+        else:
+            self.global_model = []
+            for _ in range(self.cluster_count):
+                self.global_model.append(copy.deepcopy(self.uploaded_models[0]))
+            for model in self.global_model:
+                for param in model:
+                    param.data.zero_()
+                    # TODO: 1- do job base on cluster
+
+
+
 
     def add_parameters(self, w, client_model):
         for server_param, client_param in zip(self.global_model.parameters(), client_model.parameters()):
@@ -183,7 +242,7 @@ class Server(object):
         model_path = os.path.join("models", self.dataset)
         model_path = os.path.join(model_path, self.algorithm + "_server" + ".pt")
         return os.path.exists(model_path)
-        
+
     def save_results(self):
         algo = self.dataset + "_" + self.algorithm
         result_path = "../results/"
@@ -212,14 +271,14 @@ class Server(object):
         if self.eval_new_clients and self.num_new_clients > 0:
             self.fine_tuning_new_clients()
             return self.test_metrics_new_clients()
-        
+
         num_samples = []
         tot_correct = []
         tot_auc = []
         for c in self.clients:
             ct, ns, auc = c.test_metrics()
-            tot_correct.append(ct*1.0)
-            tot_auc.append(auc*ns)
+            tot_correct.append(ct * 1.0)
+            tot_auc.append(auc * ns)
             num_samples.append(ns)
 
         ids = [c.id for c in self.clients]
@@ -229,13 +288,13 @@ class Server(object):
     def train_metrics(self):
         if self.eval_new_clients and self.num_new_clients > 0:
             return [0], [1], [0]
-        
+
         num_samples = []
         losses = []
         for c in self.clients:
             cl, ns = c.train_metrics()
             num_samples.append(ns)
-            losses.append(cl*1.0)
+            losses.append(cl * 1.0)
 
         ids = [c.id for c in self.clients]
 
@@ -246,17 +305,17 @@ class Server(object):
         stats = self.test_metrics()
         stats_train = self.train_metrics()
 
-        test_acc = sum(stats[2])*1.0 / sum(stats[1])
-        test_auc = sum(stats[3])*1.0 / sum(stats[1])
-        train_loss = sum(stats_train[2])*1.0 / sum(stats_train[1])
+        test_acc = sum(stats[2]) * 1.0 / sum(stats[1])
+        test_auc = sum(stats[3]) * 1.0 / sum(stats[1])
+        train_loss = sum(stats_train[2]) * 1.0 / sum(stats_train[1])
         accs = [a / n for a, n in zip(stats[2], stats[1])]
         aucs = [a / n for a, n in zip(stats[3], stats[1])]
-        
+
         if acc == None:
             self.rs_test_acc.append(test_acc)
         else:
             acc.append(test_acc)
-        
+
         if loss == None:
             self.rs_train_loss.append(train_loss)
         else:
@@ -328,9 +387,9 @@ class Server(object):
             if d is not None:
                 psnr_val += d
                 cnt += 1
-            
+
             # items.append((client_model, origin_grad, target_inputs))
-                
+
         if cnt > 0:
             print('PSNR value is {:.2f} dB'.format(psnr_val / cnt))
         else:
@@ -342,12 +401,12 @@ class Server(object):
         for i in range(self.num_clients, self.num_clients + self.num_new_clients):
             train_data = read_client_data(self.dataset, i, is_train=True)
             test_data = read_client_data(self.dataset, i, is_train=False)
-            client = clientObj(self.args, 
-                            id=i, 
-                            train_samples=len(train_data), 
-                            test_samples=len(test_data), 
-                            train_slow=False, 
-                            send_slow=False)
+            client = clientObj(self.args,
+                               id=i,
+                               train_samples=len(train_data),
+                               test_samples=len(test_data),
+                               train_slow=False,
+                               send_slow=False)
             self.new_clients.append(client)
 
     # fine-tuning on new clients
@@ -378,8 +437,8 @@ class Server(object):
         tot_auc = []
         for c in self.new_clients:
             ct, ns, auc = c.test_metrics()
-            tot_correct.append(ct*1.0)
-            tot_auc.append(auc*ns)
+            tot_correct.append(ct * 1.0)
+            tot_auc.append(auc * ns)
             num_samples.append(ns)
 
         ids = [c.id for c in self.new_clients]
